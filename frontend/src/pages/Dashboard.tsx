@@ -20,7 +20,7 @@ export default function Dashboard() {
         totalCustomers: 0
     });
     const [chartData, setChartData] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [_loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchDashboardData();
@@ -173,7 +173,7 @@ export default function Dashboard() {
                                 <Tooltip
                                     cursor={{ fill: 'transparent' }}
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    formatter={(value: number) => [`₹${value.toLocaleString()}`, 'Sales']}
+                                    formatter={(value) => [`₹${(value ?? 0).toLocaleString()}`, 'Sales']}
                                 />
                                 <Bar dataKey="sales" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={30} />
                             </BarChart>
