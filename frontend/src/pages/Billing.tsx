@@ -373,7 +373,7 @@ export default function Billing() {
                                 <span>₹{(generatedBill.total * (1 + (generatedBill.cgstPercentage + generatedBill.sgstPercentage) / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                             </div>
                             {/* Amount in Words */}
-                            <div className="pt-2 text-xs text-slate-500 text-right capitalize italic border-t border-slate-100 mt-2">
+                            <div className="pt-2 text-sm text-slate-700 text-right capitalize font-medium border-t border-slate-200 mt-2">
                                 {amountInWords} rupees only
                             </div>
                         </div>

@@ -16,10 +16,10 @@ export default function Layout() {
     ];
 
     return (
-        <div className="flex h-screen bg-gray-100">
+        <div className="flex h-screen bg-gray-100 print:block print:h-auto print:bg-white">
             {/* Sidebar */}
             <aside className={clsx(
-                "fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:flex md:flex-col",
+                "fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:flex md:flex-col print:hidden",
                 isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
             )}>
                 <div className="p-4 border-b border-slate-800">
@@ -76,15 +76,15 @@ export default function Layout() {
             {/* Overlay for mobile */}
             {isMobileMenuOpen && (
                 <div
-                    className="fixed inset-0 z-40 bg-black/50 md:hidden"
+                    className="fixed inset-0 z-40 bg-black/50 md:hidden print:hidden"
                     onClick={() => setIsMobileMenuOpen(false)}
                 />
             )}
 
             {/* Main Content */}
-            <main className="flex-1 overflow-auto">
+            <main className="flex-1 overflow-auto print:w-full print:overflow-visible">
                 {/* Mobile Header */}
-                <header className="md:hidden bg-white p-4 flex items-center shadow-sm sticky top-0 z-30">
+                <header className="md:hidden bg-white p-4 flex items-center shadow-sm sticky top-0 z-30 print:hidden">
                     <button onClick={() => setIsMobileMenuOpen(true)}>
                         <Menu size={24} />
                     </button>
