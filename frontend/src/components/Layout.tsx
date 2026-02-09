@@ -56,12 +56,12 @@ export default function Layout() {
                             // Also try Supabase signout just in case
                             import('../lib/supabase').then(({ supabase }) => {
                                 supabase.auth.signOut().then(() => {
-                                    window.location.href = '/login';
+                                    window.location.href = '/#/login';
                                 });
                             });
                             // Immediate redirect for demo users
                             if (localStorage.getItem('demo_session') === null) {
-                                window.location.href = '/login';
+                                window.location.href = '/#/login';
                             }
                         }}
                         className="flex items-center gap-3 w-full px-4 py-3 text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-colors"
