@@ -1,6 +1,6 @@
 
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, ShoppingBag, Receipt, History, LogOut, Menu } from 'lucide-react';
+import { LayoutDashboard, Receipt, History, LogOut, Menu } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 
@@ -10,7 +10,6 @@ export default function Layout() {
 
     const navItems = [
         { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-        { label: 'Products', path: '/products', icon: ShoppingBag },
         { label: 'Billing', path: '/billing', icon: Receipt },
         { label: 'Bill History', path: '/history', icon: History },
     ];

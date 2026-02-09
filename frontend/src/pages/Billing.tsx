@@ -1,8 +1,8 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Product, BillItem } from '../types';
-import { Search, Plus, Trash2, Save, Printer, Loader2, X } from 'lucide-react';
+import type { BillItem } from '../types';
+import { Plus, Trash2, Save, Printer, Loader2, X } from 'lucide-react';
 import { format } from 'date-fns';
 
 const numberToWords = (num: number): string => {
@@ -22,8 +22,6 @@ const numberToWords = (num: number): string => {
 };
 
 export default function Billing() {
-    const [products, setProducts] = useState<Product[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(false);
 
     // Bill State
@@ -31,8 +29,14 @@ export default function Billing() {
     const [customerPhone, setCustomerPhone] = useState('');
     const [vehicleNumber, setVehicleNumber] = useState('');
     const [vehicleName, setVehicleName] = useState('');
+    const [vehicleKm, setVehicleKm] = useState('');
     const [customerGst, setCustomerGst] = useState('');
     const [billItems, setBillItems] = useState<BillItem[]>([]);
+
+    // New Item Entry State
+    const [newItemDescription, setNewItemDescription] = useState('');
+    const [newItemQuantity, setNewItemQuantity] = useState<number | ''>(1);
+    const [newItemPrice, setNewItemPrice] = useState<number | ''>('');
 
     // Tax State
     const [cgstPercentage, setCgstPercentage] = useState(9);
@@ -40,10 +44,6 @@ export default function Billing() {
 
     // Print State
     const [generatedBill, setGeneratedBill] = useState<any | null>(null);
-
-    useEffect(() => {
-        fetchProducts();
-    }, []);
 
     // Auto-trigger print when bill is generated
     useEffect(() => {
@@ -54,48 +54,46 @@ export default function Billing() {
         }
     }, [generatedBill]);
 
-    const fetchProducts = async () => {
-        try {
-            const { data, error } = await supabase.from('products').select('*');
-            if (error) throw error;
-            setProducts(data || []);
-        } catch (error) {
-            // Demo fallback
-            if (localStorage.getItem('demo_session')) {
-                const demoProducts = JSON.parse(localStorage.getItem('demo_products') || '[]');
-                setProducts(demoProducts);
-            }
+    // Add item manually
+    const addManualItem = () => {
+        if (!newItemDescription.trim() || !newItemPrice || newItemPrice <= 0) {
+            alert('Please enter item description and a valid price.');
+            return;
         }
+
+        const newItem: BillItem = {
+            id: Math.random().toString(36).substr(2, 9),
+            bill_id: '',
+            product_id: null,
+            description: newItemDescription.trim(),
+            quantity: newItemQuantity || 1,
+            price: Number(newItemPrice),
+            amount: (newItemQuantity || 1) * Number(newItemPrice)
+        };
+
+        setBillItems([...billItems, newItem]);
+        // Reset form
+        setNewItemDescription('');
+        setNewItemQuantity(1);
+        setNewItemPrice('');
     };
 
-    const addToBill = (product: Product) => {
-        const existingItem = billItems.find(item => item.product_id === product.id);
-        if (existingItem) {
-            setBillItems(billItems.map(item =>
-                item.product_id === product.id
-                    ? { ...item, quantity: item.quantity + 1, amount: (item.quantity + 1) * item.price }
-                    : item
-            ));
-        } else {
-            setBillItems([...billItems, {
-                id: Math.random().toString(36).substr(2, 9),
-                bill_id: '',
-                product_id: product.id,
-                product: product,
-                description: product.name,
-                quantity: 1,
-                price: product.price,
-                amount: product.price
-            }]);
-        }
-        setSearchTerm(''); // Clear search after adding
-    };
-
-    const updateQuantity = (id: string, newQuantity: number) => {
-        if (newQuantity < 1) return;
+    const updateQuantity = (id: string, newQuantity: number | '') => {
         setBillItems(billItems.map(item =>
             item.id === id
-                ? { ...item, quantity: newQuantity, amount: newQuantity * item.price }
+                ? {
+                    ...item,
+                    quantity: newQuantity === '' ? '' : newQuantity,
+                    amount: (newQuantity || 1) * item.price
+                }
+                : item
+        ));
+    };
+
+    const finalizeQuantity = (id: string) => {
+        setBillItems(billItems.map(item =>
+            item.id === id && (item.quantity === '' || item.quantity < 1)
+                ? { ...item, quantity: 1, amount: item.price }
                 : item
         ));
     };
@@ -124,6 +122,7 @@ export default function Billing() {
                     phone: customerPhone,
                     vehicle_number: vehicleNumber,
                     vehicle_name: vehicleName,
+                    vehicle_km: vehicleKm,
                     gst_number: customerGst
                 }])
                 .select()
@@ -146,10 +145,10 @@ export default function Billing() {
 
             if (billError) throw billError;
 
-            // 3. Create Bill Items
+            // 3. Create Bill Items (product_id can be null now)
             const itemsToInsert = billItems.map(item => ({
                 bill_id: billData.id,
-                product_id: item.product_id,
+                product_id: item.product_id || null,
                 description: item.description,
                 quantity: item.quantity,
                 price: item.price
@@ -170,6 +169,7 @@ export default function Billing() {
                     phone: customerPhone,
                     vehicle_number: vehicleNumber,
                     vehicle_name: vehicleName,
+                    vehicle_km: vehicleKm,
                     gst_number: customerGst
                 },
                 items: billItems,
@@ -187,7 +187,7 @@ export default function Billing() {
                 const newBill = {
                     id: Date.now().toString(),
                     invoice_no: newBillId,
-                    customer: { name: customerName, phone: customerPhone, gst_number: customerGst },
+                    customer: { name: customerName, phone: customerPhone, vehicle_number: vehicleNumber, vehicle_name: vehicleName, vehicle_km: vehicleKm, gst_number: customerGst },
                     bill_date: new Date().toISOString(),
                     total_amount: calculateTotal(),
                     items: billItems,
@@ -200,7 +200,7 @@ export default function Billing() {
                 setGeneratedBill({
                     invoice_no: newBillId,
                     bill_date: new Date().toISOString(),
-                    customer: { name: customerName, phone: customerPhone },
+                    customer: { name: customerName, phone: customerPhone, vehicle_number: vehicleNumber, vehicle_name: vehicleName, vehicle_km: vehicleKm, gst_number: customerGst },
                     items: billItems,
                     total: calculateTotal(),
                     cgstPercentage,
@@ -219,16 +219,17 @@ export default function Billing() {
         setCustomerPhone('');
         setVehicleNumber('');
         setVehicleName('');
+        setVehicleKm('');
         setCustomerGst('');
         setBillItems([]);
         setCgstPercentage(9);
         setSgstPercentage(9);
+        setNewItemDescription('');
+        setNewItemQuantity(1);
+        setNewItemPrice('');
         setGeneratedBill(null); // Close print view
     };
 
-    const filteredProducts = products.filter(p =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
 
     // PRINT VIEW RENDER
     if (generatedBill) {
@@ -295,36 +296,43 @@ export default function Billing() {
                         </div>
                     </div>
 
-                    {/* Customer & Vehicle Details - Compact */}
+                    {/* Customer & Vehicle Details - Two Columns */}
                     <div className="mb-3 text-sm">
-                        <div className="flex gap-4 mb-1">
-                            <div className="flex-1">
-                                <span className="font-bold text-slate-600 uppercase text-xs">Customer:</span>
-                                <span className="font-bold text-slate-900 ml-1">{generatedBill.customer.name}</span>
+                        <div className="flex gap-8">
+                            {/* Left Column: Customer Details */}
+                            <div className="flex-1 space-y-1">
+                                <div>
+                                    <span className="font-bold text-slate-600 uppercase text-xs">Customer:</span>
+                                    <span className="font-bold text-slate-900 ml-1">{generatedBill.customer.name}</span>
+                                </div>
+                                <div>
+                                    <span className="font-bold text-slate-600 uppercase text-xs">Phone:</span>
+                                    <span className="font-medium text-slate-900 ml-1">{generatedBill.customer.phone}</span>
+                                </div>
+                                {generatedBill.customer.gst_number && (
+                                    <div>
+                                        <span className="font-bold text-slate-600 uppercase text-xs">Customer GST:</span>
+                                        <span className="font-bold text-slate-900 ml-1 uppercase">{generatedBill.customer.gst_number}</span>
+                                    </div>
+                                )}
                             </div>
-                            <div className="flex-1">
-                                <span className="font-bold text-slate-600 uppercase text-xs">Phone:</span>
-                                <span className="font-medium text-slate-900 ml-1">{generatedBill.customer.phone}</span>
-                            </div>
-                        </div>
-                        <div className="flex gap-4">
-                            <div className="flex-1">
-                                <span className="font-bold text-slate-600 uppercase text-xs">Vehicle No:</span>
-                                <span className="font-bold text-slate-900 ml-1 uppercase">{generatedBill.customer.vehicle_number || '-'}</span>
-                            </div>
-                            <div className="flex-1">
-                                <span className="font-bold text-slate-600 uppercase text-xs">Vehicle Name:</span>
-                                <span className="font-medium text-slate-900 ml-1">{generatedBill.customer.vehicle_name || '-'}</span>
-                            </div>
-                        </div>
-                        {generatedBill.customer.gst_number && (
-                            <div className="flex gap-4 mt-1">
-                                <div className="flex-1">
-                                    <span className="font-bold text-slate-600 uppercase text-xs">Customer GST:</span>
-                                    <span className="font-bold text-slate-900 ml-1 uppercase">{generatedBill.customer.gst_number}</span>
+
+                            {/* Right Column: Vehicle Details */}
+                            <div className="flex-1 space-y-1">
+                                <div>
+                                    <span className="font-bold text-slate-600 uppercase text-xs">Vehicle No:</span>
+                                    <span className="font-bold text-slate-900 ml-1 uppercase">{generatedBill.customer.vehicle_number || '-'}</span>
+                                </div>
+                                <div>
+                                    <span className="font-bold text-slate-600 uppercase text-xs">Vehicle Name:</span>
+                                    <span className="font-medium text-slate-900 ml-1">{generatedBill.customer.vehicle_name || '-'}</span>
+                                </div>
+                                <div>
+                                    <span className="font-bold text-slate-600 uppercase text-xs">Kilometre:</span>
+                                    <span className="font-medium text-slate-900 ml-1">{generatedBill.customer.vehicle_km || '-'}</span>
                                 </div>
                             </div>
-                        )}
+                        </div>
                     </div>
 
                     {/* Table - Compact */}
@@ -390,39 +398,79 @@ export default function Billing() {
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-100px)] print:hidden">
-            {/* Left Panel: Product Selection */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-[calc(100vh-100px)] print:hidden">
+            {/* Left Panel: Add Item Form */}
             <div className="lg:col-span-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                 <div className="p-4 border-b border-slate-200">
-                    <h2 className="font-semibold text-slate-800 mb-2">Select Products</h2>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
-                        <input
-                            type="text"
-                            placeholder="Search by name..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
+                    <h2 className="font-semibold text-slate-800 mb-4">Add Item</h2>
+
+                    <div className="space-y-4">
+                        {/* Item Description */}
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                Item Description
+                            </label>
+                            <input
+                                type="text"
+                                value={newItemDescription}
+                                onChange={(e) => setNewItemDescription(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="e.g. Oil Filter Service"
+                            />
+                        </div>
+
+                        {/* Quantity */}
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                Quantity
+                            </label>
+                            <input
+                                type="number"
+                                min="1"
+                                value={newItemQuantity}
+                                onChange={(e) => setNewItemQuantity(e.target.value === '' ? '' : parseInt(e.target.value) || 1)}
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                        </div>
+
+                        {/* Price/Amount */}
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                Price (₹ per unit)
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={newItemPrice}
+                                onChange={(e) => setNewItemPrice(e.target.value ? parseFloat(e.target.value) : '')}
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="0.00"
+                            />
+                        </div>
+
+                        {/* Add Button */}
+                        <button
+                            onClick={addManualItem}
+                            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-3 rounded-lg transition-colors shadow-lg shadow-blue-500/20"
+                        >
+                            <Plus size={20} />
+                            Add Item to Bill
+                        </button>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-2">
-                    {filteredProducts.map(product => (
-                        <div
-                            key={product.id}
-                            onClick={() => addToBill(product)}
-                            className="p-3 hover:bg-slate-50 rounded-lg cursor-pointer border-b border-slate-100 last:border-0 transition-colors flex justify-between items-center group"
-                        >
-                            <div>
-                                <h3 className="font-medium text-slate-900 group-hover:text-blue-600 transition-colors">{product.name}</h3>
-                                <p className="text-sm text-slate-500">₹{product.price}</p>
-                            </div>
-                            <button className="p-1 bg-slate-100 rounded-full text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600">
-                                <Plus size={16} />
-                            </button>
-                        </div>
-                    ))}
+                {/* Quick Info */}
+                <div className="flex-1 p-4 bg-slate-50/50">
+                    <div className="text-sm text-slate-500">
+                        <p className="font-medium text-slate-600 mb-2">Quick Tips:</p>
+                        <ul className="list-disc list-inside space-y-1 text-xs">
+                            <li>Enter item description clearly</li>
+                            <li>Set quantity for multiple units</li>
+                            <li>Price is per unit amount</li>
+                            <li>Total = Quantity × Price</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 
@@ -441,58 +489,75 @@ export default function Billing() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Customer Name</label>
-                            <input
-                                type="text"
-                                value={customerName}
-                                onChange={(e) => setCustomerName(e.target.value)}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="Enter Name"
-                            />
+                    <div className="grid grid-cols-2 gap-6">
+                        {/* Left Column: Customer Details */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200 pb-2">Customer Details</h3>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Customer Name</label>
+                                <input
+                                    type="text"
+                                    value={customerName}
+                                    onChange={(e) => setCustomerName(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="Enter Name"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Phone Number</label>
+                                <input
+                                    type="tel"
+                                    value={customerPhone}
+                                    onChange={(e) => setCustomerPhone(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="Enter Phone"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Customer GST (Optional)</label>
+                                <input
+                                    type="text"
+                                    value={customerGst}
+                                    onChange={(e) => setCustomerGst(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                                    placeholder="GSTIN"
+                                />
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Phone Number</label>
-                            <input
-                                type="tel"
-                                value={customerPhone}
-                                onChange={(e) => setCustomerPhone(e.target.value)}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="Enter Phone"
-                            />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Vehicle Number</label>
-                            <input
-                                type="text"
-                                value={vehicleNumber}
-                                onChange={(e) => setVehicleNumber(e.target.value)}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none uppercase"
-                                placeholder="TN 00 AA 0000"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Vehicle Name</label>
-                            <input
-                                type="text"
-                                value={vehicleName}
-                                onChange={(e) => setVehicleName(e.target.value)}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="e.g. Swift Dzire"
-                            />
-                        </div>
-                        <div className="col-span-2">
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Customer GST (Optional)</label>
-                            <input
-                                type="text"
-                                value={customerGst}
-                                onChange={(e) => setCustomerGst(e.target.value)}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none uppercase"
-                                placeholder="GSTIN"
-                            />
+
+                        {/* Right Column: Vehicle Details */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200 pb-2">Vehicle Details</h3>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Vehicle Number</label>
+                                <input
+                                    type="text"
+                                    value={vehicleNumber}
+                                    onChange={(e) => setVehicleNumber(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                                    placeholder="TN 00 AA 0000"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Vehicle Name</label>
+                                <input
+                                    type="text"
+                                    value={vehicleName}
+                                    onChange={(e) => setVehicleName(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="e.g. Swift Dzire"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Kilometre</label>
+                                <input
+                                    type="text"
+                                    value={vehicleKm}
+                                    onChange={(e) => setVehicleKm(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="e.g. 25000"
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -541,7 +606,7 @@ export default function Billing() {
                             {billItems.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
-                                        No items added. Select products from the left.
+                                        No items added. Use the form on the left to add items.
                                     </td>
                                 </tr>
                             ) : (
@@ -554,7 +619,8 @@ export default function Billing() {
                                                 type="number"
                                                 min="1"
                                                 value={item.quantity}
-                                                onChange={(e) => updateQuantity(item.id, parseInt(e.target.value) || 1)}
+                                                onChange={(e) => updateQuantity(item.id, e.target.value === '' ? '' : parseInt(e.target.value) || 1)}
+                                                onBlur={() => finalizeQuantity(item.id)}
                                                 className="w-20 px-2 py-1 border border-slate-300 rounded-md text-center focus:ring-2 focus:ring-blue-500 outline-none"
                                             />
                                         </td>

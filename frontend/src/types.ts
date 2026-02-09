@@ -31,10 +31,10 @@ export interface Bill {
 export interface BillItem {
     id: string;
     bill_id: string;
-    product_id: string;
+    product_id?: string | null;
     product?: Product;
     description: string;
-    quantity: number;
+    quantity: number | '';
     price: number;
     amount: number;
 }
