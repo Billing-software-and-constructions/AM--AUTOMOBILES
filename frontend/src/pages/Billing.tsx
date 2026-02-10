@@ -41,6 +41,10 @@ export default function Billing() {
     // Tax State
     const [cgstPercentage, setCgstPercentage] = useState(9);
     const [sgstPercentage, setSgstPercentage] = useState(9);
+    const [withGst, setWithGst] = useState(true);
+
+    // Price Mode State
+    const [priceMode, setPriceMode] = useState<'per_unit' | 'total'>('per_unit');
 
     // Print State
     const [generatedBill, setGeneratedBill] = useState<any | null>(null);
@@ -61,14 +65,19 @@ export default function Billing() {
             return;
         }
 
+        const qty = newItemQuantity || 1;
+        const enteredPrice = Number(newItemPrice);
+        const unitPrice = priceMode === 'total' ? enteredPrice / qty : enteredPrice;
+        const totalAmount = priceMode === 'total' ? enteredPrice : qty * enteredPrice;
+
         const newItem: BillItem = {
             id: Math.random().toString(36).substr(2, 9),
             bill_id: '',
             product_id: null,
             description: newItemDescription.trim(),
-            quantity: newItemQuantity || 1,
-            price: Number(newItemPrice),
-            amount: (newItemQuantity || 1) * Number(newItemPrice)
+            quantity: qty,
+            price: unitPrice,
+            amount: totalAmount
         };
 
         setBillItems([...billItems, newItem]);
@@ -137,8 +146,8 @@ export default function Billing() {
                     customer_id: customerData.id,
                     total_amount: calculateTotal(),
                     bill_date: new Date().toISOString(),
-                    cgst_percentage: cgstPercentage,
-                    sgst_percentage: sgstPercentage
+                    cgst_percentage: withGst ? cgstPercentage : 0,
+                    sgst_percentage: withGst ? sgstPercentage : 0
                 }])
                 .select()
                 .single();
@@ -174,8 +183,9 @@ export default function Billing() {
                 },
                 items: billItems,
                 total: calculateTotal(),
-                cgstPercentage,
-                sgstPercentage
+                cgstPercentage: withGst ? cgstPercentage : 0,
+                sgstPercentage: withGst ? sgstPercentage : 0,
+                withGst
             });
 
         } catch (error) {
@@ -191,8 +201,8 @@ export default function Billing() {
                     bill_date: new Date().toISOString(),
                     total_amount: calculateTotal(),
                     items: billItems,
-                    cgst_percentage: cgstPercentage,
-                    sgst_percentage: sgstPercentage
+                    cgst_percentage: withGst ? cgstPercentage : 0,
+                    sgst_percentage: withGst ? sgstPercentage : 0
                 };
                 localStorage.setItem('demo_bills', JSON.stringify([newBill, ...demoBills]));
 
@@ -203,8 +213,9 @@ export default function Billing() {
                     customer: { name: customerName, phone: customerPhone, vehicle_number: vehicleNumber, vehicle_name: vehicleName, vehicle_km: vehicleKm, gst_number: customerGst },
                     items: billItems,
                     total: calculateTotal(),
-                    cgstPercentage,
-                    sgstPercentage
+                    cgstPercentage: withGst ? cgstPercentage : 0,
+                    sgstPercentage: withGst ? sgstPercentage : 0,
+                    withGst
                 });
             } else {
                 alert('Failed to save bill. Check connection.');
@@ -224,6 +235,8 @@ export default function Billing() {
         setBillItems([]);
         setCgstPercentage(9);
         setSgstPercentage(9);
+        setWithGst(true);
+        setPriceMode('per_unit');
         setNewItemDescription('');
         setNewItemQuantity(1);
         setNewItemPrice('');
@@ -234,7 +247,9 @@ export default function Billing() {
     // PRINT VIEW RENDER
     if (generatedBill) {
         // Calculate grand total for words
-        const grandTotal = Math.round(generatedBill.total * (1 + (generatedBill.cgstPercentage + generatedBill.sgstPercentage) / 100));
+        const grandTotal = generatedBill.withGst
+            ? Math.round(generatedBill.total * (1 + (generatedBill.cgstPercentage + generatedBill.sgstPercentage) / 100))
+            : Math.round(generatedBill.total);
         const amountInWords = numberToWords(grandTotal);
 
         return (
@@ -368,17 +383,21 @@ export default function Billing() {
                                 <span>Subtotal</span>
                                 <span>₹{generatedBill.total.toLocaleString('en-IN')}</span>
                             </div>
-                            <div className="flex justify-between text-slate-600">
-                                <span>CGST ({generatedBill.cgstPercentage}%)</span>
-                                <span>₹{(generatedBill.total * (generatedBill.cgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                            </div>
-                            <div className="flex justify-between text-slate-600">
-                                <span>SGST ({generatedBill.sgstPercentage}%)</span>
-                                <span>₹{(generatedBill.total * (generatedBill.sgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                            </div>
+                            {generatedBill.withGst && (
+                                <>
+                                    <div className="flex justify-between text-slate-600">
+                                        <span>CGST ({generatedBill.cgstPercentage}%)</span>
+                                        <span>₹{(generatedBill.total * (generatedBill.cgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                    <div className="flex justify-between text-slate-600">
+                                        <span>SGST ({generatedBill.sgstPercentage}%)</span>
+                                        <span>₹{(generatedBill.total * (generatedBill.sgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                </>
+                            )}
                             <div className="flex justify-between text-base font-bold text-slate-900 border-t border-slate-200 pt-2">
                                 <span>Grand Total</span>
-                                <span>₹{(generatedBill.total * (1 + (generatedBill.cgstPercentage + generatedBill.sgstPercentage) / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                <span>₹{grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                             </div>
                             {/* Amount in Words */}
                             <div className="pt-2 text-sm text-slate-700 text-right capitalize font-medium border-t border-slate-200 mt-2">
@@ -433,10 +452,39 @@ export default function Billing() {
                             />
                         </div>
 
+                        {/* Price Mode Toggle */}
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                Price Mode
+                            </label>
+                            <div className="flex rounded-lg overflow-hidden border border-slate-300">
+                                <button
+                                    type="button"
+                                    onClick={() => setPriceMode('per_unit')}
+                                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${priceMode === 'per_unit'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                >
+                                    Per Unit
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPriceMode('total')}
+                                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${priceMode === 'total'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                >
+                                    Total Amount
+                                </button>
+                            </div>
+                        </div>
+
                         {/* Price/Amount */}
                         <div>
                             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                Price (₹ per unit)
+                                {priceMode === 'per_unit' ? 'Price (₹ per unit)' : 'Total Amount (₹)'}
                             </label>
                             <input
                                 type="number"
@@ -467,8 +515,8 @@ export default function Billing() {
                         <ul className="list-disc list-inside space-y-1 text-xs">
                             <li>Enter item description clearly</li>
                             <li>Set quantity for multiple units</li>
-                            <li>Price is per unit amount</li>
-                            <li>Total = Quantity × Price</li>
+                            <li><b>Per Unit</b>: Enter price per item, Total = Qty × Price</li>
+                            <li><b>Total Amount</b>: Enter total for all units</li>
                         </ul>
                     </div>
                 </div>
@@ -562,32 +610,62 @@ export default function Billing() {
                     </div>
                 </div>
 
-                {/* Bill Settings (New) */}
+                {/* Bill Settings — GST Toggle */}
                 <div className="px-6 pb-4 bg-slate-50/50 border-b border-slate-200">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">CGST %</label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                value={cgstPercentage}
-                                onChange={(e) => setCgstPercentage(parseFloat(e.target.value) || 0)}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">SGST %</label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                value={sgstPercentage}
-                                onChange={(e) => setSgstPercentage(parseFloat(e.target.value) || 0)}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-                            />
+                    {/* GST Toggle */}
+                    <div className="mb-3">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">GST Option</label>
+                        <div className="flex rounded-lg overflow-hidden border border-slate-300 w-fit">
+                            <button
+                                type="button"
+                                onClick={() => setWithGst(true)}
+                                className={`px-4 py-2 text-sm font-medium transition-colors ${withGst
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                                    }`}
+                            >
+                                With GST
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setWithGst(false)}
+                                className={`px-4 py-2 text-sm font-medium transition-colors ${!withGst
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                                    }`}
+                            >
+                                Without GST
+                            </button>
                         </div>
                     </div>
+
+                    {/* CGST / SGST inputs — only visible when withGst */}
+                    {withGst && (
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">CGST %</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={cgstPercentage}
+                                    onChange={(e) => setCgstPercentage(parseFloat(e.target.value) || 0)}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">SGST %</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={sgstPercentage}
+                                    onChange={(e) => setSgstPercentage(parseFloat(e.target.value) || 0)}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Bill Items Table */}
@@ -647,17 +725,26 @@ export default function Billing() {
                             <span className="text-sm text-slate-500 block">Subtotal</span>
                             <span className="font-medium text-lg">₹{calculateTotal().toLocaleString('en-IN')}</span>
                         </div>
-                        <div className="text-right">
-                            <span className="text-sm text-slate-500 block">CGST ({cgstPercentage}%)</span>
-                            <span className="font-medium text-lg">₹{(calculateTotal() * (cgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                        </div>
-                        <div className="text-right">
-                            <span className="text-sm text-slate-500 block">SGST ({sgstPercentage}%)</span>
-                            <span className="font-medium text-lg">₹{(calculateTotal() * (sgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                        </div>
+                        {withGst && (
+                            <>
+                                <div className="text-right">
+                                    <span className="text-sm text-slate-500 block">CGST ({cgstPercentage}%)</span>
+                                    <span className="font-medium text-lg">₹{(calculateTotal() * (cgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-sm text-slate-500 block">SGST ({sgstPercentage}%)</span>
+                                    <span className="font-medium text-lg">₹{(calculateTotal() * (sgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                </div>
+                            </>
+                        )}
                         <div className="text-right">
                             <span className="text-sm text-slate-500 block">Grand Total</span>
-                            <span className="font-bold text-2xl text-blue-600">₹{(calculateTotal() * (1 + (cgstPercentage + sgstPercentage) / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                            <span className="font-bold text-2xl text-blue-600">
+                                ₹{(withGst
+                                    ? calculateTotal() * (1 + (cgstPercentage + sgstPercentage) / 100)
+                                    : calculateTotal()
+                                ).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                            </span>
                         </div>
                     </div>
 
