@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { BillItem } from '../types';
@@ -25,6 +24,8 @@ export default function Billing() {
     const [loading, setLoading] = useState(false);
 
     // Bill State
+    const [billingType, setBillingType] = useState<'product' | 'labour'>('product');
+    const [labourName, setLabourName] = useState('');
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [vehicleNumber, setVehicleNumber] = useState('');
@@ -60,13 +61,18 @@ export default function Billing() {
 
     // Add item manually
     const addManualItem = () => {
-        if (!newItemDescription.trim() || !newItemPrice || newItemPrice <= 0) {
-            alert('Please enter item description and a valid price.');
+        // Validation: For Labour, only description is needed. For Product, price is also needed.
+        if (!newItemDescription.trim()) {
+            alert('Please enter item description.');
+            return;
+        }
+        if (billingType === 'product' && (!newItemPrice || newItemPrice <= 0)) {
+            alert('Please enter a valid price.');
             return;
         }
 
-        const qty = newItemQuantity || 1;
-        const enteredPrice = Number(newItemPrice);
+        const qty = billingType === 'labour' ? 1 : (newItemQuantity || 1);
+        const enteredPrice = billingType === 'labour' ? 0 : Number(newItemPrice);
         const unitPrice = priceMode === 'total' ? enteredPrice / qty : enteredPrice;
         const totalAmount = priceMode === 'total' ? enteredPrice : qty * enteredPrice;
 
@@ -121,6 +127,11 @@ export default function Billing() {
             return;
         }
 
+        if (billingType === 'labour' && !labourName) {
+            alert('Please enter labour name.');
+            return;
+        }
+
         setLoading(true);
         try {
             // 1. Create Customer
@@ -140,14 +151,15 @@ export default function Billing() {
             if (customerError) throw customerError;
 
             // 2. Create Bill
+            // For Labour billing, we save 0 as total implicitly since items have 0 price
             const { data: billData, error: billError } = await supabase
                 .from('bills')
                 .insert([{
                     customer_id: customerData.id,
                     total_amount: calculateTotal(),
                     bill_date: new Date().toISOString(),
-                    cgst_percentage: withGst ? cgstPercentage : 0,
-                    sgst_percentage: withGst ? sgstPercentage : 0
+                    cgst_percentage: (withGst && billingType === 'product') ? cgstPercentage : 0,
+                    sgst_percentage: (withGst && billingType === 'product') ? sgstPercentage : 0
                 }])
                 .select()
                 .single();
@@ -183,9 +195,11 @@ export default function Billing() {
                 },
                 items: billItems,
                 total: calculateTotal(),
-                cgstPercentage: withGst ? cgstPercentage : 0,
-                sgstPercentage: withGst ? sgstPercentage : 0,
-                withGst
+                cgstPercentage: (withGst && billingType === 'product') ? cgstPercentage : 0,
+                sgstPercentage: (withGst && billingType === 'product') ? sgstPercentage : 0,
+                withGst: (withGst && billingType === 'product'),
+                billingType,
+                labourName
             });
 
         } catch (error) {
@@ -201,8 +215,8 @@ export default function Billing() {
                     bill_date: new Date().toISOString(),
                     total_amount: calculateTotal(),
                     items: billItems,
-                    cgst_percentage: withGst ? cgstPercentage : 0,
-                    sgst_percentage: withGst ? sgstPercentage : 0
+                    cgst_percentage: (withGst && billingType === 'product') ? cgstPercentage : 0,
+                    sgst_percentage: (withGst && billingType === 'product') ? sgstPercentage : 0
                 };
                 localStorage.setItem('demo_bills', JSON.stringify([newBill, ...demoBills]));
 
@@ -213,9 +227,11 @@ export default function Billing() {
                     customer: { name: customerName, phone: customerPhone, vehicle_number: vehicleNumber, vehicle_name: vehicleName, vehicle_km: vehicleKm, gst_number: customerGst },
                     items: billItems,
                     total: calculateTotal(),
-                    cgstPercentage: withGst ? cgstPercentage : 0,
-                    sgstPercentage: withGst ? sgstPercentage : 0,
-                    withGst
+                    cgstPercentage: (withGst && billingType === 'product') ? cgstPercentage : 0,
+                    sgstPercentage: (withGst && billingType === 'product') ? sgstPercentage : 0,
+                    withGst: (withGst && billingType === 'product'),
+                    billingType,
+                    labourName
                 });
             } else {
                 alert('Failed to save bill. Check connection.');
@@ -240,6 +256,7 @@ export default function Billing() {
         setNewItemDescription('');
         setNewItemQuantity(1);
         setNewItemPrice('');
+        setLabourName('');
         setGeneratedBill(null); // Close print view
     };
 
@@ -350,6 +367,16 @@ export default function Billing() {
                         </div>
                     </div>
 
+                    {/* Labour Details (Only if present) */}
+                    {generatedBill.billingType === 'labour' && generatedBill.labourName && (
+                        <div className="mb-3 text-sm border-t border-slate-300 pt-2">
+                            <div>
+                                <span className="font-bold text-slate-600 uppercase text-xs">Labour Name:</span>
+                                <span className="font-bold text-slate-900 ml-1 uppercase">{generatedBill.labourName}</span>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Table - Compact */}
                     <div className="mb-4">
                         <table className="w-full text-left text-sm">
@@ -357,9 +384,13 @@ export default function Billing() {
                                 <tr>
                                     <th className="py-1.5 font-bold text-slate-700 w-10">#</th>
                                     <th className="py-1.5 font-bold text-slate-700">Item Description</th>
-                                    <th className="py-1.5 font-bold text-slate-700 text-right w-24">Price</th>
-                                    <th className="py-1.5 font-bold text-slate-700 text-center w-16">Qty</th>
-                                    <th className="py-1.5 font-bold text-slate-700 text-right w-24">Total</th>
+                                    {generatedBill.billingType !== 'labour' && (
+                                        <>
+                                            <th className="py-1.5 font-bold text-slate-700 text-right w-24">Price</th>
+                                            <th className="py-1.5 font-bold text-slate-700 text-center w-16">Qty</th>
+                                            <th className="py-1.5 font-bold text-slate-700 text-right w-24">Total</th>
+                                        </>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -367,44 +398,50 @@ export default function Billing() {
                                     <tr key={index}>
                                         <td className="py-1.5 text-slate-500">{index + 1}</td>
                                         <td className="py-1.5 font-medium">{item.description}</td>
-                                        <td className="py-1.5 text-right text-slate-600">₹{item.price}</td>
-                                        <td className="py-1.5 text-center text-slate-600">{item.quantity}</td>
-                                        <td className="py-1.5 text-right font-bold">₹{item.amount.toLocaleString('en-IN')}</td>
+                                        {generatedBill.billingType !== 'labour' && (
+                                            <>
+                                                <td className="py-1.5 text-right text-slate-600">₹{item.price}</td>
+                                                <td className="py-1.5 text-center text-slate-600">{item.quantity}</td>
+                                                <td className="py-1.5 text-right font-bold">₹{item.amount.toLocaleString('en-IN')}</td>
+                                            </>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
 
-                    {/* Totals - Compact */}
-                    <div className="flex justify-end border-t border-slate-800 pt-3">
-                        <div className="w-64 space-y-1 text-sm">
-                            <div className="flex justify-between text-slate-600">
-                                <span>Subtotal</span>
-                                <span>₹{generatedBill.total.toLocaleString('en-IN')}</span>
-                            </div>
-                            {generatedBill.withGst && (
-                                <>
-                                    <div className="flex justify-between text-slate-600">
-                                        <span>CGST ({generatedBill.cgstPercentage}%)</span>
-                                        <span>₹{(generatedBill.total * (generatedBill.cgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                                    </div>
-                                    <div className="flex justify-between text-slate-600">
-                                        <span>SGST ({generatedBill.sgstPercentage}%)</span>
-                                        <span>₹{(generatedBill.total * (generatedBill.sgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                                    </div>
-                                </>
-                            )}
-                            <div className="flex justify-between text-base font-bold text-slate-900 border-t border-slate-200 pt-2">
-                                <span>Grand Total</span>
-                                <span>₹{grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                            </div>
-                            {/* Amount in Words */}
-                            <div className="pt-2 text-sm text-slate-700 text-right capitalize font-medium border-t border-slate-200 mt-2">
-                                {amountInWords} rupees only
+                    {/* Totals - Compact (Hidden for Labour) */}
+                    {generatedBill.billingType !== 'labour' && (
+                        <div className="flex justify-end border-t border-slate-800 pt-3">
+                            <div className="w-64 space-y-1 text-sm">
+                                <div className="flex justify-between text-slate-600">
+                                    <span>Subtotal</span>
+                                    <span>₹{generatedBill.total.toLocaleString('en-IN')}</span>
+                                </div>
+                                {generatedBill.withGst && (
+                                    <>
+                                        <div className="flex justify-between text-slate-600">
+                                            <span>CGST ({generatedBill.cgstPercentage}%)</span>
+                                            <span>₹{(generatedBill.total * (generatedBill.cgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                        </div>
+                                        <div className="flex justify-between text-slate-600">
+                                            <span>SGST ({generatedBill.sgstPercentage}%)</span>
+                                            <span>₹{(generatedBill.total * (generatedBill.sgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                        </div>
+                                    </>
+                                )}
+                                <div className="flex justify-between text-base font-bold text-slate-900 border-t border-slate-200 pt-2">
+                                    <span>Grand Total</span>
+                                    <span>₹{grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                </div>
+                                {/* Amount in Words */}
+                                <div className="pt-2 text-sm text-slate-700 text-right capitalize font-medium border-t border-slate-200 mt-2">
+                                    {amountInWords} rupees only
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Footer - Compact */}
                     <div className="mt-6 text-center text-xs text-slate-400 border-t border-slate-100 pt-4">
@@ -424,6 +461,42 @@ export default function Billing() {
                     <h2 className="font-semibold text-slate-800 mb-4">Add Item</h2>
 
                     <div className="space-y-4">
+                        {/* Billing Type Toggle */}
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                Billing Type
+                            </label>
+                            <div className="flex rounded-lg overflow-hidden border border-slate-300">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setBillingType('product');
+                                        setBillItems([]); // Clear items on switch to avoid confusion
+                                    }}
+                                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${billingType === 'product'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                >
+                                    Product/Parts
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setBillingType('labour');
+                                        setBillItems([]); // Clear items on switch
+                                    }}
+                                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${billingType === 'labour'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                >
+                                    Labour Bill
+                                </button>
+                            </div>
+                        </div>
+
+
                         {/* Item Description */}
                         <div>
                             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
@@ -434,68 +507,74 @@ export default function Billing() {
                                 value={newItemDescription}
                                 onChange={(e) => setNewItemDescription(e.target.value)}
                                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="e.g. Oil Filter Service"
+                                placeholder={billingType === 'product' ? "e.g. Oil Filter Service" : "e.g. Engine Checkup"}
                             />
                         </div>
 
-                        {/* Quantity */}
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                Quantity
-                            </label>
-                            <input
-                                type="number"
-                                min="1"
-                                value={newItemQuantity}
-                                onChange={(e) => setNewItemQuantity(e.target.value === '' ? '' : parseInt(e.target.value) || 1)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                            />
-                        </div>
-
-                        {/* Price Mode Toggle */}
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                Price Mode
-                            </label>
-                            <div className="flex rounded-lg overflow-hidden border border-slate-300">
-                                <button
-                                    type="button"
-                                    onClick={() => setPriceMode('per_unit')}
-                                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${priceMode === 'per_unit'
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-white text-slate-600 hover:bg-slate-50'
-                                        }`}
-                                >
-                                    Per Unit
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPriceMode('total')}
-                                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${priceMode === 'total'
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-white text-slate-600 hover:bg-slate-50'
-                                        }`}
-                                >
-                                    Total Amount
-                                </button>
+                        {/* Quantity (Hidden for Labour) */}
+                        {billingType === 'product' && (
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                    Quantity
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={newItemQuantity}
+                                    onChange={(e) => setNewItemQuantity(e.target.value === '' ? '' : parseInt(e.target.value) || 1)}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
                             </div>
-                        </div>
+                        )}
 
-                        {/* Price/Amount */}
-                        <div>
-                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                {priceMode === 'per_unit' ? 'Price (₹ per unit)' : 'Total Amount (₹)'}
-                            </label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={newItemPrice}
-                                onChange={(e) => setNewItemPrice(e.target.value ? parseFloat(e.target.value) : '')}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="0.00"
-                            />
-                        </div>
+                        {/* Price Mode Toggle (Hidden for Labour) */}
+                        {billingType === 'product' && (
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                    Price Mode
+                                </label>
+                                <div className="flex rounded-lg overflow-hidden border border-slate-300">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPriceMode('per_unit')}
+                                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${priceMode === 'per_unit'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                    >
+                                        Per Unit
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPriceMode('total')}
+                                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${priceMode === 'total'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                    >
+                                        Total Amount
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Price/Amount (Hidden for Labour) */}
+                        {billingType === 'product' && (
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                    {priceMode === 'per_unit' ? 'Price (₹ per unit)' : 'Total Amount (₹)'}
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={newItemPrice}
+                                    onChange={(e) => setNewItemPrice(e.target.value ? parseFloat(e.target.value) : '')}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="0.00"
+                                />
+                            </div>
+                        )}
 
                         {/* Add Button */}
                         <button
@@ -513,10 +592,20 @@ export default function Billing() {
                     <div className="text-sm text-slate-500">
                         <p className="font-medium text-slate-600 mb-2">Quick Tips:</p>
                         <ul className="list-disc list-inside space-y-1 text-xs">
-                            <li>Enter item description clearly</li>
-                            <li>Set quantity for multiple units</li>
-                            <li><b>Per Unit</b>: Enter price per item, Total = Qty × Price</li>
-                            <li><b>Total Amount</b>: Enter total for all units</li>
+                            {billingType === 'product' ? (
+                                <>
+                                    <li>Enter item description clearly</li>
+                                    <li>Set quantity for multiple units</li>
+                                    <li><b>Per Unit</b>: Enter price per item, Total = Qty × Price</li>
+                                    <li><b>Total Amount</b>: Enter total for all units</li>
+                                </>
+                            ) : (
+                                <>
+                                    <li>Enter labour descriptions only</li>
+                                    <li><b>Labour Name</b> is required</li>
+                                    <li>Prices and Totals are hidden for labour bills</li>
+                                </>
+                            )}
                         </ul>
                     </div>
                 </div>
@@ -528,7 +617,9 @@ export default function Billing() {
                 <div className="p-6 border-b border-slate-200 bg-slate-50/50">
                     <div className="flex justify-between items-start mb-6">
                         <div>
-                            <h1 className="text-2xl font-bold text-slate-800">New Bill</h1>
+                            <h1 className="text-2xl font-bold text-slate-800">
+                                {billingType === 'product' ? 'New Invoice' : 'New Labour Bill'}
+                            </h1>
                             <p className="text-slate-500">{format(new Date(), 'PPP')}</p>
                         </div>
                         <div className="text-right">
@@ -571,6 +662,23 @@ export default function Billing() {
                                     placeholder="GSTIN"
                                 />
                             </div>
+
+                            {/* Labour Name Input (Conditiona) */}
+                            {billingType === 'labour' && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 text-blue-600">
+                                        Labour Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={labourName}
+                                        onChange={(e) => setLabourName(e.target.value)}
+                                        className="w-full px-3 py-2 bg-blue-50 border border-blue-200 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="Enter Labour Name"
+                                    />
+                                </div>
+                            )}
+
                         </div>
 
                         {/* Right Column: Vehicle Details */}
@@ -610,63 +718,65 @@ export default function Billing() {
                     </div>
                 </div>
 
-                {/* Bill Settings — GST Toggle */}
-                <div className="px-6 pb-4 bg-slate-50/50 border-b border-slate-200">
-                    {/* GST Toggle */}
-                    <div className="mb-3">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">GST Option</label>
-                        <div className="flex rounded-lg overflow-hidden border border-slate-300 w-fit">
-                            <button
-                                type="button"
-                                onClick={() => setWithGst(true)}
-                                className={`px-4 py-2 text-sm font-medium transition-colors ${withGst
+                {/* Bill Settings — GST Toggle (Hidden for Labour) */}
+                {billingType === 'product' && (
+                    <div className="px-6 pb-4 bg-slate-50/50 border-b border-slate-200">
+                        {/* GST Toggle */}
+                        <div className="mb-3">
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">GST Option</label>
+                            <div className="flex rounded-lg overflow-hidden border border-slate-300 w-fit">
+                                <button
+                                    type="button"
+                                    onClick={() => setWithGst(true)}
+                                    className={`px-4 py-2 text-sm font-medium transition-colors ${withGst
                                         ? 'bg-blue-600 text-white'
                                         : 'bg-white text-slate-600 hover:bg-slate-50'
-                                    }`}
-                            >
-                                With GST
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setWithGst(false)}
-                                className={`px-4 py-2 text-sm font-medium transition-colors ${!withGst
+                                        }`}
+                                >
+                                    With GST
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setWithGst(false)}
+                                    className={`px-4 py-2 text-sm font-medium transition-colors ${!withGst
                                         ? 'bg-blue-600 text-white'
                                         : 'bg-white text-slate-600 hover:bg-slate-50'
-                                    }`}
-                            >
-                                Without GST
-                            </button>
+                                        }`}
+                                >
+                                    Without GST
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
-                    {/* CGST / SGST inputs — only visible when withGst */}
-                    {withGst && (
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">CGST %</label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.1"
-                                    value={cgstPercentage}
-                                    onChange={(e) => setCgstPercentage(parseFloat(e.target.value) || 0)}
-                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
+                        {/* CGST / SGST inputs — only visible when withGst */}
+                        {withGst && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">CGST %</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={cgstPercentage}
+                                        onChange={(e) => setCgstPercentage(parseFloat(e.target.value) || 0)}
+                                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">SGST %</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={sgstPercentage}
+                                        onChange={(e) => setSgstPercentage(parseFloat(e.target.value) || 0)}
+                                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">SGST %</label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.1"
-                                    value={sgstPercentage}
-                                    onChange={(e) => setSgstPercentage(parseFloat(e.target.value) || 0)}
-                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
-                            </div>
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Bill Items Table */}
                 <div className="flex-1 overflow-y-auto">
@@ -674,9 +784,13 @@ export default function Billing() {
                         <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                             <tr>
                                 <th className="px-6 py-3 font-semibold text-slate-600 text-sm">Item</th>
-                                <th className="px-6 py-3 font-semibold text-slate-600 text-sm w-32">Price</th>
-                                <th className="px-6 py-3 font-semibold text-slate-600 text-sm w-32">Qty</th>
-                                <th className="px-6 py-3 font-semibold text-slate-600 text-sm w-32 text-right">Amount</th>
+                                {billingType === 'product' && (
+                                    <>
+                                        <th className="px-6 py-3 font-semibold text-slate-600 text-sm w-32">Price</th>
+                                        <th className="px-6 py-3 font-semibold text-slate-600 text-sm w-32">Qty</th>
+                                        <th className="px-6 py-3 font-semibold text-slate-600 text-sm w-32 text-right">Amount</th>
+                                    </>
+                                )}
                                 <th className="px-6 py-3 font-semibold text-slate-600 text-sm w-16"></th>
                             </tr>
                         </thead>
@@ -691,18 +805,22 @@ export default function Billing() {
                                 billItems.map((item) => (
                                     <tr key={item.id} className="hover:bg-slate-50/80">
                                         <td className="px-6 py-4 font-medium text-slate-900">{item.description}</td>
-                                        <td className="px-6 py-4 text-slate-600">₹{item.price}</td>
-                                        <td className="px-6 py-4">
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                value={item.quantity}
-                                                onChange={(e) => updateQuantity(item.id, e.target.value === '' ? '' : parseInt(e.target.value) || 1)}
-                                                onBlur={() => finalizeQuantity(item.id)}
-                                                className="w-20 px-2 py-1 border border-slate-300 rounded-md text-center focus:ring-2 focus:ring-blue-500 outline-none"
-                                            />
-                                        </td>
-                                        <td className="px-6 py-4 text-right font-medium text-slate-900">₹{item.amount.toLocaleString('en-IN')}</td>
+                                        {billingType === 'product' && (
+                                            <>
+                                                <td className="px-6 py-4 text-slate-600">₹{item.price}</td>
+                                                <td className="px-6 py-4">
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={item.quantity}
+                                                        onChange={(e) => updateQuantity(item.id, e.target.value === '' ? '' : parseInt(e.target.value) || 1)}
+                                                        onBlur={() => finalizeQuantity(item.id)}
+                                                        className="w-20 px-2 py-1 border border-slate-300 rounded-md text-center focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-medium text-slate-900">₹{item.amount.toLocaleString('en-IN')}</td>
+                                            </>
+                                        )}
                                         <td className="px-6 py-4 text-right">
                                             <button
                                                 onClick={() => removeFromBill(item.id)}
@@ -721,31 +839,41 @@ export default function Billing() {
                 {/* Footer / Totals */}
                 <div className="p-6 border-t border-slate-200 bg-slate-50">
                     <div className="flex justify-end gap-8 mb-6">
-                        <div className="text-right">
-                            <span className="text-sm text-slate-500 block">Subtotal</span>
-                            <span className="font-medium text-lg">₹{calculateTotal().toLocaleString('en-IN')}</span>
-                        </div>
-                        {withGst && (
+                        {billingType === 'product' && (
                             <>
                                 <div className="text-right">
-                                    <span className="text-sm text-slate-500 block">CGST ({cgstPercentage}%)</span>
-                                    <span className="font-medium text-lg">₹{(calculateTotal() * (cgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                    <span className="text-sm text-slate-500 block">Subtotal</span>
+                                    <span className="font-medium text-lg">₹{calculateTotal().toLocaleString('en-IN')}</span>
                                 </div>
+                                {withGst && (
+                                    <>
+                                        <div className="text-right">
+                                            <span className="text-sm text-slate-500 block">CGST ({cgstPercentage}%)</span>
+                                            <span className="font-medium text-lg">₹{(calculateTotal() * (cgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-sm text-slate-500 block">SGST ({sgstPercentage}%)</span>
+                                            <span className="font-medium text-lg">₹{(calculateTotal() * (sgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                        </div>
+                                    </>
+                                )}
                                 <div className="text-right">
-                                    <span className="text-sm text-slate-500 block">SGST ({sgstPercentage}%)</span>
-                                    <span className="font-medium text-lg">₹{(calculateTotal() * (sgstPercentage / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                    <span className="text-sm text-slate-500 block">Grand Total</span>
+                                    <span className="font-bold text-2xl text-blue-600">
+                                        ₹{(withGst
+                                            ? calculateTotal() * (1 + (cgstPercentage + sgstPercentage) / 100)
+                                            : calculateTotal()
+                                        ).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                    </span>
                                 </div>
                             </>
                         )}
-                        <div className="text-right">
-                            <span className="text-sm text-slate-500 block">Grand Total</span>
-                            <span className="font-bold text-2xl text-blue-600">
-                                ₹{(withGst
-                                    ? calculateTotal() * (1 + (cgstPercentage + sgstPercentage) / 100)
-                                    : calculateTotal()
-                                ).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                            </span>
-                        </div>
+
+                        {billingType === 'labour' && (
+                            <div className="text-right text-slate-400 italic text-sm">
+                                Labour Bill — Amount TBD
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex justify-end gap-3">
