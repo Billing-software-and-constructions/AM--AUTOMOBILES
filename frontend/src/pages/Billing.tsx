@@ -66,13 +66,13 @@ export default function Billing() {
             alert('Please enter item description.');
             return;
         }
-        if (billingType === 'product' && (!newItemPrice || newItemPrice <= 0)) {
-            alert('Please enter a valid price.');
+        if ((!newItemPrice || newItemPrice <= 0)) {
+            alert('Please enter a valid price/amount.');
             return;
         }
 
         const qty = billingType === 'labour' ? 1 : (newItemQuantity || 1);
-        const enteredPrice = billingType === 'labour' ? 0 : Number(newItemPrice);
+        const enteredPrice = Number(newItemPrice);
         const unitPrice = priceMode === 'total' ? enteredPrice / qty : enteredPrice;
         const totalAmount = priceMode === 'total' ? enteredPrice : qty * enteredPrice;
 
@@ -384,7 +384,9 @@ export default function Billing() {
                                 <tr>
                                     <th className="py-1.5 font-bold text-slate-700 w-10">#</th>
                                     <th className="py-1.5 font-bold text-slate-700">Item Description</th>
-                                    {generatedBill.billingType !== 'labour' && (
+                                    {generatedBill.billingType === 'labour' ? (
+                                        <th className="py-1.5 font-bold text-slate-700 text-right w-24">Amount</th>
+                                    ) : (
                                         <>
                                             <th className="py-1.5 font-bold text-slate-700 text-right w-24">Price</th>
                                             <th className="py-1.5 font-bold text-slate-700 text-center w-16">Qty</th>
@@ -398,7 +400,9 @@ export default function Billing() {
                                     <tr key={index}>
                                         <td className="py-1.5 text-slate-500">{index + 1}</td>
                                         <td className="py-1.5 font-medium">{item.description}</td>
-                                        {generatedBill.billingType !== 'labour' && (
+                                        {generatedBill.billingType === 'labour' ? (
+                                            <td className="py-1.5 text-right font-bold">₹{item.amount.toLocaleString('en-IN')}</td>
+                                        ) : (
                                             <>
                                                 <td className="py-1.5 text-right text-slate-600">₹{item.price}</td>
                                                 <td className="py-1.5 text-center text-slate-600">{item.quantity}</td>
@@ -411,8 +415,9 @@ export default function Billing() {
                         </table>
                     </div>
 
-                    {/* Totals - Compact (Hidden for Labour) */}
-                    {generatedBill.billingType !== 'labour' && (
+                    {/* Totals - Compact */}
+                    {(
+
                         <div className="flex justify-end border-t border-slate-800 pt-3">
                             <div className="w-64 space-y-1 text-sm">
                                 <div className="flex justify-between text-slate-600">
@@ -558,23 +563,21 @@ export default function Billing() {
                             </div>
                         )}
 
-                        {/* Price/Amount (Hidden for Labour) */}
-                        {billingType === 'product' && (
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                    {priceMode === 'per_unit' ? 'Price (₹ per unit)' : 'Total Amount (₹)'}
-                                </label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={newItemPrice}
-                                    onChange={(e) => setNewItemPrice(e.target.value ? parseFloat(e.target.value) : '')}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                    placeholder="0.00"
-                                />
-                            </div>
-                        )}
+                        {/* Price/Amount */}
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                {billingType === 'labour' ? 'Amount (₹)' : (priceMode === 'per_unit' ? 'Price (₹ per unit)' : 'Total Amount (₹)')}
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={newItemPrice}
+                                onChange={(e) => setNewItemPrice(e.target.value ? parseFloat(e.target.value) : '')}
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="0.00"
+                            />
+                        </div>
 
                         {/* Add Button */}
                         <button
@@ -603,7 +606,7 @@ export default function Billing() {
                                 <>
                                     <li>Enter labour descriptions only</li>
                                     <li><b>Labour Name</b> is required</li>
-                                    <li>Prices and Totals are hidden for labour bills</li>
+                                    <li>Enter <b>Amount</b> for each labour item</li>
                                 </>
                             )}
                         </ul>
@@ -805,7 +808,7 @@ export default function Billing() {
                                 billItems.map((item) => (
                                     <tr key={item.id} className="hover:bg-slate-50/80">
                                         <td className="px-6 py-4 font-medium text-slate-900">{item.description}</td>
-                                        {billingType === 'product' && (
+                                        {billingType === 'product' ? (
                                             <>
                                                 <td className="px-6 py-4 text-slate-600">₹{item.price}</td>
                                                 <td className="px-6 py-4">
@@ -818,6 +821,13 @@ export default function Billing() {
                                                         className="w-20 px-2 py-1 border border-slate-300 rounded-md text-center focus:ring-2 focus:ring-blue-500 outline-none"
                                                     />
                                                 </td>
+                                                <td className="px-6 py-4 text-right font-medium text-slate-900">₹{item.amount.toLocaleString('en-IN')}</td>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {/* For Labour: Empty Price/Qty cols to keep alignment, or just Amount */}
+                                                <td className="px-6 py-4 text-slate-600"></td>
+                                                <td className="px-6 py-4"></td>
                                                 <td className="px-6 py-4 text-right font-medium text-slate-900">₹{item.amount.toLocaleString('en-IN')}</td>
                                             </>
                                         )}
@@ -870,8 +880,11 @@ export default function Billing() {
                         )}
 
                         {billingType === 'labour' && (
-                            <div className="text-right text-slate-400 italic text-sm">
-                                Labour Bill — Amount TBD
+                            <div className="text-right">
+                                <span className="text-sm text-slate-500 block">Total Amount</span>
+                                <span className="font-bold text-2xl text-blue-600">
+                                    ₹{calculateTotal().toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                </span>
                             </div>
                         )}
                     </div>
